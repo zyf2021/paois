@@ -90,9 +90,7 @@ def decode_data():
     return 'Данные зашифрованы'
 
 def insert_db():
-    global duration
-    global samplerate
-    global F_signal, A_signal, F_noise, A_noise
+    global duration, samplerate, F_signal, A_signal, F_noise, A_noise, t, data_n, data_filter
     try:
         connection = psycopg2.connect(user='postgres',
                                       password='postgres',
@@ -123,8 +121,6 @@ def insert_db():
         cursor.execute(insert_query)
         connection.commit()
         print("запись о параметрах главного сигнала вставлена")
-        print(F_noise)
-        print(A_noise)
         insert_query = '''
     INSERT INTO public.parameters_noise(id_signal, id_nomer, f, a)
 	VALUES ('''+str(id_signal)+''', 0, '''+ str(F_noise[0])+''', '''+ str(A_noise[0])+''');
@@ -136,7 +132,32 @@ def insert_db():
         cursor.execute(insert_query)
         connection.commit()
         print("запись о параметрах шума вставлена")
+
+        arr = np.column_stack([t, data_n])
+        print(arr)
+        i = 0
+        for a in arr:
+            i+=1
+            cursor.execute('''
+    INSERT INTO public.indications_start(
+	id_signal, t, x, id_1_indication)
+	VALUES ('''+str(id_signal)+''', PGP_SYM_ENCRYPT(text('''+str(a[0])+'''), 'sym_key'), PGP_SYM_ENCRYPT(text('''+str(a[1])+'''), 'sym_key'), '''+str(i)+''');
+''')
+        connection.commit()
+
+        arr = np.column_stack([t, data_filter])
+        print(arr)
+        i = 0
+        for a in arr:
+            i+=1
+            cursor.execute('''
+    INSERT INTO public.indications_filter(
+	id_signal, t, x, id_1_indication)
+	VALUES ('''+str(id_signal)+''', PGP_SYM_ENCRYPT(text('''+str(a[0])+'''), 'sym_key'), PGP_SYM_ENCRYPT(text('''+str(a[1])+'''), 'sym_key'), '''+str(i)+''');
+''')
+        connection.commit()
         
+        print("запись об исходном сигнале вставлена")
         print("Результат id_signal", record[0])
     except (Exception, Error) as error:
         print("Ошибка при работе с PostgreSQL", error)
@@ -148,8 +169,27 @@ def insert_db():
     #return 'Данные записаны'
 
 
-def select_from_db(signal_id):
-    return 'Данные из БД ' + str(signal_id)
+def select_from_db():
+    id_signal = entry_num_signal.get()
+    try:
+        connection = psycopg2.connect(user='postgres',
+                                      password='postgres',
+                                      host='localhost',
+                                      port='5432',
+                                      database = 'signals')
+        cursor = connection.cursor()
+        select_query = 'select count(*) from indications_start where id_signal = '+str(id_signal)
+        cursor.execute(select_query)
+        record = cursor.fetchall()
+        print(record)
+    except(Exception, Error) as error:
+        print("Ошибка при запросе к БД")
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+            print("Соединение закрыто")
+    #print('Данные из БД ' + str(id_signal))
 
 duration = 10
 samplerate = 44100
@@ -171,12 +211,11 @@ data_filter = []
 
 window = Tk()
 window.title("ЛАБ_ПАОИС_3_4")
-window.geometry('800x540')
+window.geometry('600x540')
 window.title('Plotting in Tkinter')
 
 btn_get_signal = Button(text='Получить сигнал', command = lambda: get_data_noise(data, noise))
 btn_get_signal.grid(row=0, column=0)
-print(data_n)
 
 btn_filter_signal = Button(text='Фильтровать сигнал', command = lambda: get_filter_data(data_n))#
 btn_filter_signal.grid(row=1, column=0)
@@ -184,11 +223,15 @@ btn_filter_signal.grid(row=1, column=0)
 btn_save_bd = Button(text='Записать в БД', command = insert_db)
 btn_save_bd.grid(row=2, column=0)
 
-btn_select_bd = Button(text='Получить из БД')
-btn_select_bd.grid(row=3, column=0)
-
 entry_num_signal = Entry(width=5)
 entry_num_signal.grid(row=3, column=1)
+
+
+
+btn_select_bd = Button(text='Получить из БД', command = lambda: select_from_db())
+btn_select_bd.grid(row=3, column=0)
+
+
 
 
 
